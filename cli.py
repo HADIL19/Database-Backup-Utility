@@ -1,7 +1,4 @@
 # cli.py
-# Entry point. Parses CLI arguments with Click and delegates
-# to the correct connector. Contains no backup logic itself.
-
 import click
 import os
 from connectors.sqlite import SQLiteConnector
@@ -25,6 +22,23 @@ def backup(db_type, path, output):
         dest = os.path.join(output, os.path.basename(path) + '.bak')
         connector.backup(dest)
         click.echo(f"Backup saved to {dest}")
+    else:
+        click.echo(f"{db_type} not implemented yet.")
+
+@cli.command()
+@click.option('--db-type', required=True, type=click.Choice(['sqlite', 'mysql', 'postgres', 'mongo']))
+@click.option('--path', help='Path to the target SQLite database file (will be overwritten)')
+@click.option('--backup-file', required=True, help='Path to the backup file to restore from')
+def restore(db_type, path, backup_file):
+    """Restore a database from a backup file."""
+    if db_type == 'sqlite':
+        if not os.path.exists(backup_file):
+            click.echo(f"Error: backup file not found at {backup_file}")
+            return
+
+        connector = SQLiteConnector(path)
+        connector.restore(backup_file)
+        click.echo(f"Restored {path} from {backup_file}")
     else:
         click.echo(f"{db_type} not implemented yet.")
 

@@ -4,13 +4,15 @@ A production-style CLI tool for backing up and restoring databases — built aro
 
 Supports **SQLite** and **MySQL** out of the box, with automatic **compression**, **structured logging**, secure credential handling, and disaster-recovery-tested restore logic.
 
+**Project page:** <https://roadmap.sh/projects/database-backup-utility>
+
 ## Why this exists
 
 Most backup scripts are a single function that calls `mysqldump` and hopes for the best. This project treats backup/restore as what it actually is in production systems: a reliability-critical operation that needs consistency guarantees, proper error handling, observability, and a design that scales to more database engines without becoming spaghetti.
 
 ## Features
 
-- 🔌 **Pluggable database support** — SQLite and MySQL implemented today via a shared `DBConnector` interface (`test_connection`, `backup`, `restore`). Adding PostgreSQL or MongoDB means writing one new class — zero changes to existing code.
+- 🔌 **Pluggable database support** — SQLite and MySQL implemented today via a shared `DBConnector` interface (`test_connection`, `backup`, `restore`). Adding a new engine means writing one new class — zero changes to existing code.
 - 🛡️ **Consistency-safe backups** — SQLite uses the native SQLite backup API instead of a raw file copy, avoiding corruption on a live database. MySQL uses `mysqldump --single-transaction` for a consistent snapshot without table locks.
 - 📦 **Streaming compression** — every backup is gzip-compressed with chunked I/O, so large databases don't get fully loaded into memory during compression.
 - ♻️ **Verified restore** — a full backup → restore round-trip, stress-tested by deliberately destroying data and confirming full recovery.
@@ -52,16 +54,19 @@ MySQL support requires the `mysql` and `mysqldump` CLI tools on your system PATH
 ## Usage
 
 **Backup a SQLite database:**
+
 ```bash
 python cli.py backup --db-type sqlite --path test.db --output ./backups
 ```
 
 **Backup a MySQL database:**
+
 ```bash
 python cli.py backup --db-type mysql --host localhost --port 3306 --user root --password YOUR_PASSWORD --database testdb --output ./backups
 ```
 
 **Restore:**
+
 ```bash
 python cli.py restore --db-type sqlite --path test.db --backup-file ./backups/test.db.bak.gz
 python cli.py restore --db-type mysql --host localhost --port 3306 --user root --password YOUR_PASSWORD --database testdb --backup-file ./backups/testdb.sql.gz
@@ -89,10 +94,13 @@ Every restore path in this project has been validated with an actual disaster-re
 
 ## Roadmap
 
-- PostgreSQL and MongoDB connectors (architecture already supports this)
+Actively being built out:
+
+- **MongoDB connector** — same `DBConnector` interface, backed by `mongodump`/`mongorestore`
+- **Automated scheduling** — a built-in recurring-backup command, with cron/Task Scheduler as the production-recommended alternative
+- Automated test suite (pytest) covering connectors and compression
 - Cloud storage backends (S3 / GCS)
 - Slack notifications on completion/failure
-- Scheduled/automated backup runs
 - Selective (table/collection-level) restore
 
 ## Tech stack

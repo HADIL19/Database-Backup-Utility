@@ -5,6 +5,7 @@ import time
 from connectors.sqlite import SQLiteConnector
 from connectors.mysql import MySQLConnector
 from backup.compression import compress_file, decompress_file
+from storage.local import LocalStorage
 from logging_utils.logger import get_logger
 
 logger = get_logger()
@@ -52,18 +53,22 @@ def backup(db_type, path, host, port, user, password, database, output, compress
             click.echo("Error: could not connect to database.")
             return
 
+        storage = LocalStorage(output)
+
         filename = database if db_type != 'sqlite' else os.path.basename(path)
-        dest = os.path.join(output, f"{filename}.sql" if db_type != 'sqlite' else f"{filename}.bak")
+        temp_dest = os.path.join(output, f"{filename}.sql" if db_type != 'sqlite' else f"{filename}.bak")
 
         os.makedirs(output, exist_ok=True)
-        connector.backup(dest)
+        connector.backup(temp_dest)
 
         if compress:
-            dest = compress_file(dest)
+            temp_dest = compress_file(temp_dest)
+
+        final_path = storage.save(temp_dest)
 
         duration = round(time.time() - start_time, 2)
-        logger.info(f"Backup completed | file={dest} | duration={duration}s")
-        click.echo(f"Backup saved to {dest}")
+        logger.info(f"Backup completed | file={final_path} | duration={duration}s")
+        click.echo(f"Backup saved to {final_path}")
 
     except Exception as e:
         duration = round(time.time() - start_time, 2)

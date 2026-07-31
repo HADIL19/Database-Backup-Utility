@@ -2,7 +2,7 @@
 # MySQL implementation of DBConnector.
 # Wraps mysqldump/mysql CLI tools via subprocess rather than
 # reimplementing dump logic — this is standard practice.
-#The correct approach: pass the password via an environment variable that mysqldump reads securely, avoiding it ever appearing in the process list. We'll build this properly in the connector.
+
 import subprocess
 import os
 from connectors.base import DBConnector
@@ -22,7 +22,19 @@ class MySQLConnector(DBConnector):
         env["MYSQL_PWD"] = self.password
         return env
 
-    
+    def test_connection(self) -> bool:
+        try:
+            result = subprocess.run(
+                ["mysql", "-h", self.host, "-P", str(self.port), "-u", self.user,
+                 "-e", "SELECT 1;"],
+                env=self._env(),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return result.returncode == 0
+        except FileNotFoundError:
+            return False
 
     def backup(self, output_path: str) -> str:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

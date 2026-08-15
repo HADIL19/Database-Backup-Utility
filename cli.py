@@ -1,14 +1,21 @@
 # cli.py
 import click
 import os
+import shutil
 import time
 from connectors.sqlite import SQLiteConnector
 from connectors.mysql import MySQLConnector
+from connectors.mongo import MongoConnector
 from backup.compression import compress_file, decompress_file
 from storage.local import LocalStorage
 from logging_utils.logger import get_logger
 
 logger = get_logger()
+
+DEFAULT_PORTS = {
+    'mysql': 3306,
+    'mongo': 27017,
+}
 
 @click.group()
 def cli():
@@ -22,6 +29,8 @@ def get_connector(db_type, path, host, port, user, password, database):
         return SQLiteConnector(path)
     elif db_type == 'mysql':
         return MySQLConnector(host, port, user, password, database)
+    elif db_type == 'mongo':
+        return MongoConnector(host, port, database)
     else:
         return None
 
@@ -30,9 +39,9 @@ def get_connector(db_type, path, host, port, user, password, database):
 @click.option('--db-type', required=True, type=click.Choice(['sqlite', 'mysql', 'postgres', 'mongo']))
 @click.option('--path', help='Path to the SQLite database file (SQLite only)')
 @click.option('--host', default='localhost', help='DB host (MySQL/Postgres/Mongo)')
-@click.option('--port', default=3306, type=int, help='DB port')
-@click.option('--user', default='root', help='DB username')
-@click.option('--password', default='', help='DB password')
+@click.option('--port', default=None, type=int, help='DB port (defaults per db-type if omitted)')
+@click.option('--user', default='root', help='DB username (MySQL only)')
+@click.option('--password', default='', help='DB password (MySQL only)')
 @click.option('--database', help='Database name (MySQL/Postgres/Mongo)')
 @click.option('--output', default='./backups', help='Folder to save the backup in')
 @click.option('--compress/--no-compress', default=True, help='Compress the backup file (default: on)')
@@ -40,6 +49,9 @@ def backup(db_type, path, host, port, user, password, database, output, compress
     """Backup a database."""
     start_time = time.time()
     logger.info(f"Backup started | db_type={db_type}")
+
+    if port is None:
+        port = DEFAULT_PORTS.get(db_type, 0)
 
     try:
         connector = get_connector(db_type, path, host, port, user, password, database)
@@ -53,12 +65,20 @@ def backup(db_type, path, host, port, user, password, database, output, compress
             click.echo("Error: could not connect to database.")
             return
 
+        os.makedirs(output, exist_ok=True)
         storage = LocalStorage(output)
 
-        filename = database if db_type != 'sqlite' else os.path.basename(path)
-        temp_dest = os.path.join(output, f"{filename}.sql" if db_type != 'sqlite' else f"{filename}.bak")
+        if db_type == 'sqlite':
+            filename = os.path.basename(path)
+            temp_dest = os.path.join(output, f"{filename}.bak")
+        elif db_type == 'mysql':
+            temp_dest = os.path.join(output, f"{database}.sql")
+        elif db_type == 'mongo':
+            # MongoDB backups are FOLDERS, not files — no extension here
+            temp_dest = os.path.join(output, database)
+        else:
+            temp_dest = os.path.join(output, database or "backup")
 
-        os.makedirs(output, exist_ok=True)
         connector.backup(temp_dest)
 
         if compress:
@@ -80,15 +100,18 @@ def backup(db_type, path, host, port, user, password, database, output, compress
 @click.option('--db-type', required=True, type=click.Choice(['sqlite', 'mysql', 'postgres', 'mongo']))
 @click.option('--path', help='Path to the target SQLite database file (SQLite only)')
 @click.option('--host', default='localhost')
-@click.option('--port', default=3306, type=int)
+@click.option('--port', default=None, type=int, help='DB port (defaults per db-type if omitted)')
 @click.option('--user', default='root')
 @click.option('--password', default='')
 @click.option('--database', help='Database name (MySQL/Postgres/Mongo)')
-@click.option('--backup-file', required=True, help='Path to the backup file to restore from')
+@click.option('--backup-file', required=True, help='Path to the backup file/folder to restore from')
 def restore(db_type, path, host, port, user, password, database, backup_file):
     """Restore a database from a backup file."""
     start_time = time.time()
     logger.info(f"Restore started | db_type={db_type} | backup_file={backup_file}")
+
+    if port is None:
+        port = DEFAULT_PORTS.get(db_type, 0)
 
     try:
         if not os.path.exists(backup_file):
@@ -97,7 +120,9 @@ def restore(db_type, path, host, port, user, password, database, backup_file):
             return
 
         actual_backup_file = backup_file
-        if backup_file.endswith('.gz'):
+        is_compressed = backup_file.endswith('.gz') or backup_file.endswith('.zip')
+
+        if is_compressed:
             actual_backup_file = decompress_file(backup_file)
 
         connector = get_connector(db_type, path, host, port, user, password, database)
@@ -108,8 +133,11 @@ def restore(db_type, path, host, port, user, password, database, backup_file):
 
         connector.restore(actual_backup_file)
 
-        if backup_file.endswith('.gz'):
-            os.remove(actual_backup_file)
+        if is_compressed:
+            if os.path.isdir(actual_backup_file):
+                shutil.rmtree(actual_backup_file)
+            else:
+                os.remove(actual_backup_file)
 
         duration = round(time.time() - start_time, 2)
         logger.info(f"Restore completed | duration={duration}s")
